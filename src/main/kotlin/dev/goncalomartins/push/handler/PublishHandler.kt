@@ -1,10 +1,9 @@
 package dev.goncalomartins.push.handler
 
-import dev.goncalomartins.push.messaging.EventBus
 import dev.goncalomartins.push.model.Message
+import dev.goncalomartins.push.service.MessagingService
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import org.springframework.core.codec.DecodingException
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
@@ -14,14 +13,14 @@ import org.springframework.web.reactive.function.server.bodyToMono
 import reactor.core.publisher.Mono
 
 /**
- * Publish controller
+ * Publish Handler
  *
- * @property eventBus
- * @constructor Create empty Publish controller
+ * @property messagingService
+ * @constructor Creates Publish Handler
  */
 @Component
 class PublishHandler(
-    private val eventBus: EventBus
+    private val messagingService: MessagingService
 ) {
 
     /**
@@ -30,22 +29,23 @@ class PublishHandler(
     private val logger: Logger = LoggerFactory.getLogger(javaClass)
 
     /**
-     * Publish message
+     * Publish a message to a channel
      *
-     * @param serverRequest
-     * @return
+     * @param serverRequest represents the server-side HTTP request
+     * @return a [Mono] that emits the [ServerResponse]
      */
     fun publish(
         serverRequest: ServerRequest
     ): Mono<ServerResponse> =
         serverRequest.bodyToMono<Message>()
             .flatMap { payload ->
-                logger.info("Publishing message to channel '{}'", payload.channel)
-
-                eventBus.publish(channel = payload.channel, message = payload.message)
+                messagingService.publish(channel = payload.channel, message = payload.message)
                     .flatMap {
                         ServerResponse.accepted().contentType(MediaType.APPLICATION_JSON)
                             .bodyValue(mapOf("subscribers" to it))
+                    }
+                    .doOnSubscribe {
+                        logger.info("Publishing message to channel '{}'", payload.channel)
                     }
                     .doOnSuccess {
                         logger.info("Successfully published message to channel '{}'", payload.channel)
@@ -53,8 +53,6 @@ class PublishHandler(
                     .doOnError { error ->
                         logger.error("Error while publishing message to channel '{}'", payload.channel, error)
                     }
-            }.onErrorResume(DecodingException::class.java) {
-                ServerResponse.badRequest().bodyValue(mapOf("error" to "Invalid request body"))
             }
             .onErrorResume {
                 ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).bodyValue(mapOf("error" to it.message))

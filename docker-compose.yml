@@ -6,3 +6,41 @@ services:
     hostname: redis
     ports:
       - 6379:6379
+
+  integration-tests:
+    build:
+      context: .
+      target: BUILD_IMAGE
+    container_name: push-integration-tests
+    depends_on:
+      - redis
+    environment:
+      SPRING_PROFILES_ACTIVE: test
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_DATABASE: 0
+    command: gradle integrationTest
+
+  unit-tests:
+    build:
+      context: .
+      target: BUILD_IMAGE
+    container_name: push-unit-tests
+    command: gradle test
+
+  push:
+    build:
+      context: .
+      target: RUN_IMAGE
+    container_name: push
+    hostname: push
+    depends_on:
+      - redis
+    environment:
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_DATABASE: 0
+    ports:
+      - 8080:8080

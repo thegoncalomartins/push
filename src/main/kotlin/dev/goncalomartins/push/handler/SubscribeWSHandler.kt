@@ -11,7 +11,7 @@ import org.springframework.web.util.UriComponentsBuilder
 import reactor.core.publisher.Mono
 
 /**
- * Subscribe w s controller
+ * Subscribe w s Handler
  *
  * @constructor Create empty Subscribe w s controller
  */

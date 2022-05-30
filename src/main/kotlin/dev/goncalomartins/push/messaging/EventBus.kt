@@ -10,7 +10,7 @@ import reactor.core.publisher.Mono
 /**
  * Event bus
  *
- * @constructor Create empty Event bus
+ * @constructor Creates an Event Bus instance
  */
 @Component
 class EventBus(

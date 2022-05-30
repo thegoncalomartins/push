@@ -10,7 +10,7 @@ import reactor.core.publisher.Mono
  * Messaging service
  *
  * @property eventBus
- * @constructor Create empty Messaging service
+ * @constructor Creates a Messaging Service instance
  */
 @Service
 class MessagingService(

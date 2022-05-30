@@ -11,13 +11,12 @@ import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
 import reactor.core.publisher.Mono
-import java.util.UUID
 
 /**
- * Subscribe s s e handler
+ * Subscribe SSE Handler
  *
- * @property messagingService
- * @constructor Create empty Subscribe s s e handler
+ * @property messagingService API to subscribe to messages
+ * @constructor Create Subscribe SSE Handler
  */
 @Component
 class SubscribeSSEHandler(
@@ -35,10 +34,10 @@ class SubscribeSSEHandler(
     private val objectMapper = jacksonObjectMapper()
 
     /**
-     * Listen to Messages
+     * Subscribe to Messages
      *
-     * @param serverRequest
-     * @return
+     * @param serverRequest represents the server-side HTTP request
+     * @return a [Mono] that emits the [ServerResponse]
      */
     fun subscribe(
         serverRequest: ServerRequest
@@ -72,7 +71,7 @@ class SubscribeSSEHandler(
     /**
      * Messages
      *
-     * @param channels
+     * @param channels the channels to subscribe to
      */
     private fun messages(vararg channels: String) = messagingService
         .subscribe(*channels)
@@ -81,7 +80,6 @@ class SubscribeSSEHandler(
             ServerSentEvent.builder<String>()
                 .event("message")
                 .data(objectMapper.writeValueAsString(message))
-                .id(UUID.randomUUID().toString())
                 .build()
         }
 }
