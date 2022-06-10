@@ -45,13 +45,13 @@ class PublishHandler(
                             .bodyValue(mapOf("subscribers" to it))
                     }
                     .doOnSubscribe {
-                        logger.info("Publishing message to channel '{}'", payload.channel)
+                        logger.info("[PUB] Publishing message to channel '{}'", payload.channel)
                     }
                     .doOnSuccess {
-                        logger.info("Successfully published message to channel '{}'", payload.channel)
+                        logger.info("[PUB] Successfully published message to channel '{}'", payload.channel)
                     }
                     .doOnError { error ->
-                        logger.error("Error while publishing message to channel '{}'", payload.channel, error)
+                        logger.error("[PUB] Error while publishing message to channel '{}'", payload.channel, error)
                     }
             }
             .onErrorResume {

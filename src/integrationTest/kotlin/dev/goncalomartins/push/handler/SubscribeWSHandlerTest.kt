@@ -60,7 +60,7 @@ class SubscribeWSHandlerTest {
             session.receive()
                 .map(WebSocketMessage::getPayloadAsText)
                 .doOnNext(messages::add)
-                .take(2)
+                .take(3)
                 .then()
         }.block(Duration.ofSeconds(5L))
 
@@ -69,21 +69,33 @@ class SubscribeWSHandlerTest {
         }
 
         assertAll(
-            { assertEquals(2, messages.size) },
+            { assertEquals(3, messages.size) },
             {
                 assertTrue(
                     messages.containsAll(
                         listOf(
                             objectMapper.writeValueAsString(
                                 mapOf(
-                                    "channel" to channelFoo,
-                                    "message" to messageFoo
+                                    "event" to "ping",
+                                    "data" to emptyMap<String, Any?>()
                                 )
                             ),
                             objectMapper.writeValueAsString(
                                 mapOf(
-                                    "channel" to channelBar,
-                                    "message" to messageBar
+                                    "event" to "message",
+                                    "data" to mapOf(
+                                        "channel" to channelFoo,
+                                        "message" to messageFoo
+                                    )
+                                )
+                            ),
+                            objectMapper.writeValueAsString(
+                                mapOf(
+                                    "event" to "message",
+                                    "data" to mapOf(
+                                        "channel" to channelBar,
+                                        "message" to messageBar
+                                    )
                                 )
                             )
                         )

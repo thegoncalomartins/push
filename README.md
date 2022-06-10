@@ -1,5 +1,5 @@
 # push
-Real Time Push Messaging API
+Real Time Reactive Push Messaging API
 
 ## TODO
 * [X] Add unit and integration tests

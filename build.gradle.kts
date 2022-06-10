@@ -1,12 +1,14 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.springframework.boot.gradle.tasks.bundling.BootBuildImage
 
 val mockitoKotlinVersion: String by extra("4.0.0")
 val mockitoJunitJupiterVersion: String by extra("4.6.0")
 
 plugins {
-    id("org.springframework.boot") version "2.6.6"
+    id("org.springframework.boot") version "2.7.0"
+    id("org.springframework.experimental.aot") version "0.12.0"
     id("io.spring.dependency-management") version "1.0.11.RELEASE"
     kotlin("jvm") version "1.6.20"
     kotlin("plugin.spring") version "1.6.20"
@@ -16,6 +18,7 @@ group = "dev.goncalomartins"
 
 repositories {
     mavenCentral()
+    maven { url = uri("https://repo.spring.io/release") }
 }
 
 dependencies {
@@ -89,4 +92,11 @@ task<Test>("integrationTest") {
     group = "verification"
     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
     classpath = sourceSets["integrationTest"].runtimeClasspath
+}
+
+tasks.getByName<BootBuildImage>("bootBuildImage") {
+    builder = "paketobuildpacks/builder:tiny"
+    environment = mapOf(
+        "BP_NATIVE_IMAGE" to "true"
+    )
 }

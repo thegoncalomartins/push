@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate
@@ -16,6 +17,7 @@ import org.springframework.test.web.reactive.server.returnResult
 import reactor.core.scheduler.Schedulers
 import reactor.test.StepVerifier
 import java.net.URI
+import java.time.Duration
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @ExtendWith(SpringExtension::class)
@@ -28,6 +30,18 @@ class SubscribeSSEHandlerTest {
 
     @Autowired
     private lateinit var stringRedisTemplate: ReactiveStringRedisTemplate
+
+    @Value("\${push.reconnect.dither.min.duration}")
+    private lateinit var minReconnectDitherDuration: Duration
+
+    @Value("\${push.reconnect.dither.max.duration}")
+    private lateinit var maxReconnectDitherDuration: Duration
+
+    @Value("\${push.client.close.grace.period.duration}")
+    private lateinit var clientCloseGracePeriodDuration: Duration
+
+    @Value("\${push.heartbeat.interval.duration}")
+    private lateinit var heartbeatIntervalDuration: Duration
 
     private val objectMapper = jacksonObjectMapper()
 
@@ -61,9 +75,10 @@ class SubscribeSSEHandlerTest {
                 .returnResult<ServerSentEvent<String>>()
                 .responseBody
 
-        StepVerifier.create(messages, 2)
+        StepVerifier.create(messages, 3)
             .expectNextMatches { sse ->
-                sse.event() == "message" &&
+                sse.event() == "heartbeat" ||
+                    sse.event() == "message" &&
                     (
                         sse.data() == objectMapper.writeValueAsString(
                             mapOf(
@@ -79,7 +94,25 @@ class SubscribeSSEHandlerTest {
                         )
             }
             .expectNextMatches { sse ->
-                sse.event() == "message" &&
+                sse.event() == "heartbeat" ||
+                    sse.event() == "message" &&
+                    (
+                        sse.data() == objectMapper.writeValueAsString(
+                            mapOf(
+                                "channel" to channelBar,
+                                "message" to messageBar
+                            )
+                        ) || sse.data() == objectMapper.writeValueAsString(
+                            mapOf(
+                                "channel" to channelFoo,
+                                "message" to messageFoo
+                            )
+                        )
+                        )
+            }
+            .expectNextMatches { sse ->
+                sse.event() == "heartbeat" ||
+                    sse.event() == "message" &&
                     (
                         sse.data() == objectMapper.writeValueAsString(
                             mapOf(
@@ -102,6 +135,49 @@ class SubscribeSSEHandlerTest {
             .thenCancel()
             .verify()
     }
+
+/*    @Test
+    fun subscribeUntilMinimumDitherDuration() {
+        StepVerifier
+            .withVirtualTime {
+                val channel = "channel"
+                subscribeWebTestClient
+                    .get()
+                    .uri(URI.create("/sse/messages?channels=$channel"))
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .exchange()
+                    .expectStatus().isOk
+                    .returnResult<ServerSentEvent<String>>()
+                    .responseBody
+            }
+            .expectSubscription()
+            .expectNextMatches {
+                it.toString() == ServerSentEvent.builder<String>().event("heartbeat").data("{}").build().toString()
+            }
+            .thenAwait(heartbeatIntervalDuration)
+            .expectNextMatches {
+                it.toString() == ServerSentEvent.builder<String>().event("heartbeat").data("{}").build().toString()
+            }
+            .thenAwait(heartbeatIntervalDuration)
+            .expectNextMatches {
+                it.toString() == ServerSentEvent.builder<String>().event("heartbeat").data("{}").build().toString()
+            }
+            .thenAwait(heartbeatIntervalDuration)
+            .expectNextMatches {
+                it.toString() == ServerSentEvent.builder<String>().event("heartbeat").data("{}").build().toString()
+            }
+            .thenAwait(heartbeatIntervalDuration)
+            .expectNextMatches {
+                it.toString() == ServerSentEvent.builder<String>().event("heartbeat").data("{}").build().toString()
+            }
+            .expectNextMatches {
+                it.toString() == ServerSentEvent.builder<String>().event("heartbeat").data("{}")
+                    .build().toString() || it.toString() == ServerSentEvent.builder<String>().event("reconnect")
+                    .data("{}").build().toString()
+            }
+            .thenCancel()
+            .verify()
+    }*/
 
     @Test
     fun subscribeWithoutChannels() {

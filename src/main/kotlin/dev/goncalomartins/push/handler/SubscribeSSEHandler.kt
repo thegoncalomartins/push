@@ -2,15 +2,20 @@ package dev.goncalomartins.push.handler
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dev.goncalomartins.push.service.MessagingService
+import dev.goncalomartins.push.utils.HandlerUtils
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.codec.ServerSentEvent
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.server.ServerRequest
 import org.springframework.web.reactive.function.server.ServerResponse
+import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import reactor.core.scheduler.Schedulers
+import java.time.Duration
 
 /**
  * Subscribe SSE Handler
@@ -20,6 +25,14 @@ import reactor.core.publisher.Mono
  */
 @Component
 class SubscribeSSEHandler(
+    @Value("\${push.reconnect.dither.min.duration}")
+    private val minReconnectDitherDuration: Duration,
+    @Value("\${push.reconnect.dither.max.duration}")
+    private val maxReconnectDitherDuration: Duration,
+    @Value("\${push.client.close.grace.period.duration}")
+    private val clientCloseGracePeriodDuration: Duration,
+    @Value("\${push.heartbeat.interval.duration}")
+    private val heartbeatIntervalDuration: Duration,
     private val messagingService: MessagingService
 ) {
 
@@ -47,11 +60,24 @@ class SubscribeSSEHandler(
                 IllegalArgumentException("'channels' query parameter required")
             }.split(",")
 
+            val reconnectDitherDuration = HandlerUtils.reconnectDitherDuration(
+                minReconnectDitherDuration,
+                maxReconnectDitherDuration
+            )
+
+            val reconnectEventDuration = reconnectDitherDuration.minus(clientCloseGracePeriodDuration)
+
             ServerResponse
                 .ok()
                 .contentType(MediaType.TEXT_EVENT_STREAM)
                 .body(
                     messages(*channels.toTypedArray())
+                        .mergeWith(heartbeats())
+                        .mergeWith(reconnections(reconnectEventDuration))
+                        .take(
+                            reconnectDitherDuration,
+                            Schedulers.boundedElastic()
+                        )
                         .doOnSubscribe {
                             logger.info("[SSE] Connection has been established")
                         }
@@ -82,4 +108,45 @@ class SubscribeSSEHandler(
                 .data(objectMapper.writeValueAsString(message))
                 .build()
         }
+
+    /**
+     * Reconnections
+     *
+     * @param reconnectEventDuration
+     * @return
+     */
+    private fun reconnections(reconnectEventDuration: Duration): Flux<ServerSentEvent<String>> =
+        Flux.interval(reconnectEventDuration, Schedulers.boundedElastic())
+            .map {
+                logger.info("[SSE] Pushing 'reconnect' message")
+                ServerSentEvent.builder<String>()
+                    .event("reconnect")
+                    .data("{}")
+                    .build()
+            }
+            .take(1L)
+
+    /**
+     * Heartbeats
+     *
+     * @return
+     */
+    private fun heartbeats(): Flux<ServerSentEvent<String>> {
+        val heartbeatEventSupplier = {
+            logger.info("[SSE] Pushing 'heartbeat' message")
+            ServerSentEvent.builder<String>()
+                .event("heartbeat")
+                .data("{}")
+                .build()
+        }
+
+        return Mono.fromCallable {
+            heartbeatEventSupplier.invoke()
+        }.concatWith(
+            Flux.interval(heartbeatIntervalDuration, Schedulers.boundedElastic())
+                .map {
+                    heartbeatEventSupplier.invoke()
+                }
+        )
+    }
 }
