@@ -5,6 +5,9 @@ import org.springframework.boot.gradle.tasks.bundling.BootBuildImage
 
 val mockitoKotlinVersion: String by extra("4.0.0")
 val mockitoJunitJupiterVersion: String by extra("4.6.0")
+val springJaegerCloudStarterVersion: String by extra("3.3.1")
+val logstashLogbackEncoderVersion by extra("7.2")
+val janinoVersion: String by extra("3.1.7")
 
 plugins {
     id("org.springframework.boot") version "2.7.0"
@@ -22,8 +25,13 @@ repositories {
 }
 
 dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")
     implementation("org.springframework.boot:spring-boot-starter-webflux")
+    implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("io.opentracing.contrib:opentracing-spring-jaeger-cloud-starter:$springJaegerCloudStarterVersion")
+    implementation("net.logstash.logback:logstash-logback-encoder:$logstashLogbackEncoderVersion")
+    implementation("org.codehaus.janino:janino:$janinoVersion")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
@@ -99,4 +107,8 @@ tasks.getByName<BootBuildImage>("bootBuildImage") {
     environment = mapOf(
         "BP_NATIVE_IMAGE" to "true"
     )
+}
+
+springAot {
+    removeXmlSupport.set(false)
 }

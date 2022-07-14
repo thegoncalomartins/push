@@ -3,6 +3,7 @@ package dev.goncalomartins.push.handler
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dev.goncalomartins.push.service.MessagingService
 import dev.goncalomartins.push.utils.HandlerUtils
+import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -16,6 +17,7 @@ import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Subscribe SSE Handler
@@ -33,7 +35,8 @@ class SubscribeSSEHandler(
     private val clientCloseGracePeriodDuration: Duration,
     @Value("\${push.heartbeat.interval.duration}")
     private val heartbeatIntervalDuration: Duration,
-    private val messagingService: MessagingService
+    private val messagingService: MessagingService,
+    private val registry: MeterRegistry
 ) {
 
     /**
@@ -45,6 +48,15 @@ class SubscribeSSEHandler(
      * Object mapper
      */
     private val objectMapper = jacksonObjectMapper()
+
+    /**
+     * Number of active connections
+     */
+    private val connections = AtomicInteger()
+
+    init {
+        registry.gauge("sse.connections.count", connections) { it.toDouble() }
+    }
 
     /**
      * Subscribe to Messages
@@ -80,9 +92,15 @@ class SubscribeSSEHandler(
                         )
                         .doOnSubscribe {
                             logger.info("[SSE] Connection has been established")
+                            Mono.fromRunnable<Unit> { connections.incrementAndGet() }
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .subscribe()
                         }
                         .doFinally {
                             logger.info("[SSE] Connection has been terminated")
+                            Mono.fromRunnable<Unit> { connections.decrementAndGet() }
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .subscribe()
                         },
                     ServerSentEvent::class.java
                 )
@@ -103,6 +121,7 @@ class SubscribeSSEHandler(
         .subscribe(*channels)
         .map { message ->
             logger.info("[SSE] Pushing message from channel '{}'", message.channel)
+            registry.counter("sse.messages").increment()
             ServerSentEvent.builder<String>()
                 .event("message")
                 .data(objectMapper.writeValueAsString(message))
@@ -131,22 +150,13 @@ class SubscribeSSEHandler(
      *
      * @return
      */
-    private fun heartbeats(): Flux<ServerSentEvent<String>> {
-        val heartbeatEventSupplier = {
-            logger.info("[SSE] Pushing 'heartbeat' message")
-            ServerSentEvent.builder<String>()
-                .event("heartbeat")
-                .data("{}")
-                .build()
-        }
-
-        return Mono.fromCallable {
-            heartbeatEventSupplier.invoke()
-        }.concatWith(
-            Flux.interval(heartbeatIntervalDuration, Schedulers.boundedElastic())
-                .map {
-                    heartbeatEventSupplier.invoke()
-                }
-        )
-    }
+    private fun heartbeats(): Flux<ServerSentEvent<String>> =
+        Flux.interval(Duration.ofMillis(0), heartbeatIntervalDuration, Schedulers.boundedElastic())
+            .map {
+                logger.info("[SSE] Pushing 'heartbeat' message")
+                ServerSentEvent.builder<String>()
+                    .event("heartbeat")
+                    .data("{}")
+                    .build()
+            }
 }

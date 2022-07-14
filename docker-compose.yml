@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.3'
 services:
   redis:
     image: redis
@@ -7,31 +7,11 @@ services:
     ports:
       - 6379:6379
 
-  integration-tests:
-    build:
-      context: .
-      target: BUILD_IMAGE
-    container_name: push-integration-tests
-    depends_on:
-      - redis
-    environment:
-      SPRING_PROFILES_ACTIVE: test
-      SPRING_REDIS_HOST: redis
-      SPRING_REDIS_PORT: 6379
-      SPRING_REDIS_DATABASE: 0
-    command: gradle integrationTest
-
-  unit-tests:
-    build:
-      context: .
-      target: BUILD_IMAGE
-    container_name: push-unit-tests
-    command: gradle test
-
   push:
     build:
       context: .
       target: RUN_IMAGE
+    image: thegoncalomartins/push
     container_name: push
     hostname: push
     depends_on:
@@ -42,9 +22,106 @@ services:
       PUSH_CLIENT_CLOSE_GRACE_PERIOD_DURATION: 4s
       PUSH_HEARTBEAT_INTERVAL_DURATION: 30s
       SERVER_PORT: 8080
-      SPRING_PROFILES_ACTIVE: dev
+      MANAGEMENT_SERVER_PORT: 8000
+      OPENTRACING_JAEGER_UDP_SENDER_HOST: jaeger
+      OPENTRACING_JAEGER_UDP_SENDER_PORT: 6831
+      SPRING_PROFILES_ACTIVE: docker
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
       SPRING_REDIS_DATABASE: 0
     ports:
       - 8080:8080
+      - 8000:8000
+    labels:
+      collect_logs_with_filebeat: "true"
+      decode_log_event_to_json_object: "true"
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    hostname: prometheus
+    depends_on:
+      - push
+      - jaeger
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    hostname: grafana
+    depends_on:
+      - prometheus
+      - jaeger
+      - redis
+    volumes:
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - 3000:3000
+    environment:
+      GF_INSTALL_PLUGINS: redis-app
+
+  jaeger:
+    image: jaegertracing/all-in-one
+    container_name: jaeger
+    hostname: jaeger
+    ports:
+      - 5775:5775/udp
+      - 6831:6831/udp
+      - 6832:6832/udp
+      - 5778:5778
+      - 16686:16686
+      - 14268:14268
+
+  elasticsearch:
+    image: elasticsearch:8.2.3
+    container_name: elasticsearch
+    hostname: elasticsearch
+    ports:
+      - 9200:9200
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+
+  logstash:
+    image: logstash:8.2.3
+    container_name: logstash
+    hostname: logstash
+    ports:
+      - 25826:25826
+      - 5044:5044
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro                # Pipeline configuration
+    environment:
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: kibana:8.2.3
+    container_name: kibana
+    hostname: kibana
+    ports:
+      - 5601:5601
+    environment:
+      elasticsearch.hosts: http://elasticsearch:9200
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    depends_on:
+      - elasticsearch
+
+  filebeat:
+    image: elastic/filebeat:8.2.3
+    container_name: filebeat
+    hostname: filebeat
+    volumes:
+      - ./filebeat/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro     # Configuration file
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro           # Docker logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro                       # Additional information about containers
+    user: root                                                             # Allow access to log files and docker.sock
+    depends_on:
+      - logstash

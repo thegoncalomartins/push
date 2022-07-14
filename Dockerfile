@@ -12,7 +12,7 @@ COPY build.gradle.kts .
 COPY settings.gradle.kts .
 COPY src ./src
 
-RUN gradle clean build -x test
+RUN gradle clean build -x test -x compileAotMainJava
 
 FROM openjdk:17.0.2-slim-bullseye AS RUN_IMAGE
 

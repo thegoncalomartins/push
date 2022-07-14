@@ -3,6 +3,7 @@ package dev.goncalomartins.push.handler
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import dev.goncalomartins.push.service.MessagingService
 import dev.goncalomartins.push.utils.HandlerUtils
+import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -15,11 +16,13 @@ import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Subscribe w s Handler
+ * Subscribe WS Handler
  *
- * @constructor Create empty Subscribe w s controller
+ * @constructor Create empty Subscribe WS Handler
  */
 @Component
 class SubscribeWSHandler(
@@ -31,7 +34,8 @@ class SubscribeWSHandler(
     private val clientCloseGracePeriodDuration: Duration,
     @Value("\${push.heartbeat.interval.duration}")
     private val heartbeatIntervalDuration: Duration,
-    private val messagingService: MessagingService
+    private val messagingService: MessagingService,
+    private val registry: MeterRegistry
 ) : WebSocketHandler {
 
     /**
@@ -43,6 +47,15 @@ class SubscribeWSHandler(
      * Logger
      */
     private val logger: Logger = LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Number of active connections
+     */
+    private val connections = AtomicInteger()
+
+    init {
+        registry.gauge("ws.connections.count", connections) { it.toDouble() }
+    }
 
     /**
      * Handle
@@ -73,12 +86,14 @@ class SubscribeWSHandler(
                 )
             }
 
+            val responding = AtomicBoolean(true)
+
             session.send(
                 messages(*channels)
                     .map(session::textMessage)
             ).and(
                 session.send(
-                    pings()
+                    pings(responding)
                         .map(session::textMessage)
                 )
             ).and(
@@ -100,6 +115,7 @@ class SubscribeWSHandler(
                             }
                             "pong" -> {
                                 logger.info("[WS] Receiving 'pong' message")
+                                responding.set(true)
                                 Mono.empty()
                             }
                             else -> Mono.empty()
@@ -112,8 +128,16 @@ class SubscribeWSHandler(
         }
         .doOnSubscribe {
             logger.info("[WS] Connection has been established")
+            Mono.fromRunnable<Unit> { connections.incrementAndGet() }
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe()
         }.doFinally {
             logger.info("[WS] Connection has been terminated")
+            Mono.fromRunnable<Unit> { connections.decrementAndGet() }
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe()
+        }.onErrorResume(IllegalStateException::class.java) {
+            session.close()
         }.onErrorResume(IllegalArgumentException::class.java) {
             session.send(
                 Mono.just(objectMapper.writeValueAsString(mapOf("error" to it.message))).map(session::textMessage)
@@ -149,6 +173,7 @@ class SubscribeWSHandler(
     private fun messages(vararg channels: String): Flux<String> = messagingService.subscribe(*channels)
         .map { message ->
             logger.info("[WS] Pushing message from channel '{}'", message.channel)
+            registry.counter("ws.messages").increment()
             objectMapper.writeValueAsString(
                 mapOf(
                     "event" to "message",
@@ -184,24 +209,19 @@ class SubscribeWSHandler(
      *
      * @return
      */
-    private fun pings(): Flux<String> {
-        val pingEventSupplier = {
-            logger.info("[WS] Pushing 'ping' message")
-            objectMapper.writeValueAsString(
-                mapOf(
-                    "event" to "ping",
-                    "data" to emptyMap<String, Any?>()
-                )
-            )
-        }
+    private fun pings(responding: AtomicBoolean): Flux<String> =
+        Flux.interval(Duration.ofMillis(0), heartbeatIntervalDuration, Schedulers.boundedElastic())
+            .map {
+                if (!responding.get()) throw IllegalStateException()
 
-        return Mono.fromCallable {
-            pingEventSupplier.invoke()
-        }.concatWith(
-            Flux.interval(heartbeatIntervalDuration, Schedulers.boundedElastic())
-                .map {
-                    pingEventSupplier.invoke()
-                }
-        )
-    }
+                responding.set(false)
+
+                logger.info("[WS] Pushing 'ping' message")
+                objectMapper.writeValueAsString(
+                    mapOf(
+                        "event" to "ping",
+                        "data" to emptyMap<String, Any?>()
+                    )
+                )
+            }
 }

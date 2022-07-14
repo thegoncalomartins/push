@@ -2,6 +2,7 @@ package dev.goncalomartins.push.handler
 
 import dev.goncalomartins.push.model.Message
 import dev.goncalomartins.push.service.MessagingService
+import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -20,7 +21,8 @@ import reactor.core.publisher.Mono
  */
 @Component
 class PublishHandler(
-    private val messagingService: MessagingService
+    private val messagingService: MessagingService,
+    private val registry: MeterRegistry
 ) {
 
     /**
@@ -49,6 +51,7 @@ class PublishHandler(
                     }
                     .doOnSuccess {
                         logger.info("[PUB] Successfully published message to channel '{}'", payload.channel)
+                        registry.counter("pub.messages").increment()
                     }
                     .doOnError { error ->
                         logger.error("[PUB] Error while publishing message to channel '{}'", payload.channel, error)

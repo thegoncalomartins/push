@@ -23,7 +23,8 @@ class MessagingService(
      * @param message
      * @return
      */
-    fun publish(channel: String, message: Any): Mono<Long> = eventBus.publish(channel, message)
+    fun publish(channel: String, message: Any): Mono<Long> =
+        eventBus.publish(channel, message)
 
     /**
      * Subscribe
