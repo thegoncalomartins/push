@@ -4,23 +4,68 @@
 ## Architecture
 "Push" was designed with the goal of being scalable and possibly used in a distributed environment, it uses [Redis](https://redis.io/) as message broker.
 
-The following diagram demonstrates the architecture behind "Push" in a [Kubernetes](https://kubernetes.io/) environment, where we can create a cluster for Redis with master and slave nodes in order to have horizontal scalability and resiliency and also multiple instances of the application itself for the same purpose.
+The following diagram demonstrates the architecture behind "Push" in a [Kubernetes](https://kubernetes.io/) environment, where we can create a cluster for [Redis](https://redis.io/) with master and slave nodes in order to have horizontal scalability and resiliency and also multiple instances of the application itself for the same purpose.
 
 ### Push Architecture
+This section describes the architecture of "Push" through a component diagram.
+
 ![](./docs/arch.png)
 
 ### Deployment Architecture
-This section describes how a kubernetes deployment works under the hood.
-
+"Push" takes advantage of the "Deployment" workload API from [Kubernetes](https://kubernetes.io/).
+This section describes how it works under the hood.
+A Deployment provides declarative updates for Pods and ReplicaSets and is used to tell Kubernetes how to create or modify instances of the pods that hold a containerized application. Deployments can scale the number of replica pods, enable rollout of updated code in a controlled manner, or roll back to an earlier deployment version if necessary.
 ![](./docs/deployment-arch.png)
 
 ### StatefulSet Architecture
-This section describes how a kubernetes stateful set works under the hood.
-
+"Push" makes use of the "StatefulSet" workload API to manage the [Redis](https://redis.io/) cluster.
+This section describes how a kubernetes StatefulSet works under the hood.
+StatefulSet is the workload API object used to manage stateful applications. It manages the deployment and scaling of a set of Pods, and provides guarantees about the ordering and uniqueness of these Pods. Similar to a Deployment, a StatefulSet manages Pods that are based on an identical container spec.
 ![](./docs/statefulset-arch.png)
 
 ## Getting Started
-// TODO
+
+Required software:
+1. [`docker`](https://www.docker.com/products/docker-desktop/)
+2. [`minikube`](https://minikube.sigs.k8s.io/docs/start/)
+3. [`kubectl`](https://kubernetes.io/docs/tasks/tools/)
+
+If you also want to compile the code directly on your machine you'll also need:
+1. [`java 17`](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html)
+2. [`gradle`](https://gradle.org/install/)
+
+### Building from Source
+
+To compile the code simply run
+```bash
+$ gradle clean build -x test -x compileAotMainJava
+```
+
+### Running Unit Tests
+
+#### Locally
+```bash
+$ gradle clean build -x compileAotMainJava
+```
+
+#### With Docker
+```bash
+$ docker-compose -f docker-compose.test.yml build unit-tests && docker-compose -f docker-compose.test.yml run unit-tests
+```
+
+### Running Integration Tests
+
+#### Locally
+```bash
+$ gradle clean build integrationTest -x compileAotMainJava
+```
+
+#### With Docker
+```bash
+$ docker-compose -f docker-compose.test.yml build integration-tests && docker-compose -f docker-compose.test.yml run integration-tests
+```
+
+// TODO complete
 
 ## To Do List
 * [ ] Add unit and integration tests
@@ -40,5 +85,12 @@ This section describes how a kubernetes stateful set works under the hood.
 * [ ] Add "acks" to websockets messages
 * [ ] Configure native compilation
 
+
+
 ## References
 - https://github.com/rustudorcalin/deploying-redis-cluster
+- https://www.vmware.com/topics/glossary/content/kubernetes-deployment.html
+- https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+- https://congdonglinux.com/rolling-updates-and-rollbacks-in-kubernetes/
+- https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
+- https://jayendrapatil.com/kubernetes-components/
